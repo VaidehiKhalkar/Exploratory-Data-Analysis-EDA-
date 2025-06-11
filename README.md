@@ -1,6 +1,6 @@
 # Used Car Price Analysis - Exploratory Data Analysis (EDA)
 
-## Live Dashboard: https://exploratory-data-analysis-eda--app-ja7aob.streamlit.app/
+## Live Dashboard: https://vaidehikhalkar-exploratory-data-analysis-eda--app-ja7aob.streamlit.app/
 
 ##  Project Overview
 
