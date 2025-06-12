@@ -2,114 +2,107 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# ── Page Configuration ───────────────────────────────────────────────────────────
+# --- Page Configuration ---
 st.set_page_config(
-    page_title="🚗 Car Dashboard",
-    page_icon="🚘",
+    page_title="Used Car Dashboard",
+    page_icon="🚗",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ── Custom CSS for KPI Cards ─────────────────────────────────────────────────────
-st.markdown("""
-<style>
-div[data-testid="metric-container"] {
-    background-color: #f5f5f5;
-    border-radius: 8px;
-    padding: 10px;
-    margin-bottom: 10px;
-}
-div[data-testid="metric-container"] > label {
-    font-size: 1rem;
-    font-weight: 600;
-    color: #333333;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# ── Load Built-In Dataset from GitHub ─────────────────────────────────────────────
+# --- Load and Preprocess Data ---
 @st.cache_data
 def load_data():
-    url = "https://raw.githubusercontent.com/stedy/Machine-Learning-with-R-datasets/master/usedcars.csv"
-    df = pd.read_csv(url)
+    df = pd.read_csv("car_data.csv")
+    df.drop_duplicates(inplace=True)
+    df.dropna(subset=["Price"], inplace=True)
+    
+    # Clean Engine, Mileage, Power if present
+    if "Engine" in df.columns:
+        df["Engine"] = df["Engine"].str.extract(r'(\d+)').astype(float)
+    if "Power" in df.columns:
+        df["Power"] = df["Power"].str.extract(r'(\d+.\d+)').astype(float)
+    if "Mileage" in df.columns:
+        df["Mileage"] = df["Mileage"].str.extract(r'(\d+.\d+)').astype(float)
+    
+    df["Price"] = df["Price"].astype(float)
     return df
 
 df = load_data()
 
-# ── Sidebar Filtering ──────────────────────────────────────────────────────────────
-st.sidebar.header("🔍 Filter Data")
-df_filtered = df.copy()
+# --- Sidebar Filters ---
+st.sidebar.title("🔎 Filters")
+brand_filter = st.sidebar.selectbox("Select Brand", ["All"] + sorted(df["Name"].dropna().str.split().str[0].unique()))
+fuel_filter = st.sidebar.multiselect("Fuel Type", options=df["Fuel_Type"].dropna().unique(), default=df["Fuel_Type"].dropna().unique())
+trans_filter = st.sidebar.multiselect("Transmission", options=df["Transmission"].dropna().unique(), default=df["Transmission"].dropna().unique())
 
-# Categorical filters
-cats = df_filtered.select_dtypes(include="object").columns
-for col in cats:
-    vals = st.sidebar.multiselect(col, options=df_filtered[col].unique(), default=df_filtered[col].unique())
-    df_filtered = df_filtered[df_filtered[col].isin(vals)]
+filtered_df = df.copy()
+if brand_filter != "All":
+    filtered_df = filtered_df[filtered_df["Name"].str.startswith(brand_filter)]
+filtered_df = filtered_df[
+    (filtered_df["Fuel_Type"].isin(fuel_filter)) &
+    (filtered_df["Transmission"].isin(trans_filter))
+]
 
-# Numeric filters
-nums = df_filtered.select_dtypes(include=np.number).columns
-for col in ["year", "price", "mileage"]:
-    if col in nums:
-        mi, ma = float(df_filtered[col].min()), float(df_filtered[col].max())
-        low, high = st.sidebar.slider(f"{col} range", mi, ma, (mi, ma))
-        df_filtered = df_filtered[(df_filtered[col] >= low) & (df_filtered[col] <= high)]
+# --- Dashboard Title ---
+st.title("🚗 Used Car Analysis Dashboard")
+st.markdown("""
+Interactive dashboard to explore used car listings, pricing trends, and market features.
+""")
 
-st.sidebar.markdown("---")
+# --- Tabs ---
+tabs = st.tabs(["📊 Overview", "📈 Trends", "📎 Correlation Matrix", "📋 Data Table"])
 
-# ── Header & KPIs ────────────────────────────────────────────────────────────────
-st.title("🚗 Used Cars EDA Dashboard")
-
-col1, col2, col3, col4 = st.columns(4, gap="large")
-col1.metric("Total Records", f"{len(df_filtered):,}")
-if "price" in nums:
-    col2.metric("Average Price", f"${df_filtered['price'].mean():,.0f}")
-if "mileage" in nums:
-    col3.metric("Average Mileage", f"{df_filtered['mileage'].mean():,.0f} mi")
-if "year" in nums:
-    col4.metric("Newest Model Year", f"{int(df_filtered['year'].max())}")
-
-st.markdown("---")
-
-# ── Native Streamlit Charts ──────────────────────────────────────────────────────
-st.subheader("📊 Visual Exploration")
-c1, c2, c3 = st.columns(3, gap="medium")
-
-with c1:
-    st.write(f"### Cars by Year")
-    st.bar_chart(df_filtered["year"].value_counts().sort_index())
-
-with c2:
-    st.write("### Price Trend")
-    st.line_chart(df_filtered.groupby("year")["price"].mean())
-
-with c3:
-    st.write("### Mileage Distribution")
-    st.area_chart(df_filtered["mileage"].dropna())
-
-st.markdown("---")
-
-# ── Data Table and Map ─────────────────────────────────────────────────────────────
-tabs = st.tabs(["📋 Data Table", "🗺️ Map View"])
+# --- Overview Tab ---
 with tabs[0]:
-    st.dataframe(df_filtered.reset_index(drop=True), use_container_width=True, height=300)
+    st.markdown("### 📊 Key Metrics")
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    kpi1.metric("Total Listings", len(filtered_df))
+    kpi2.metric("Average Price", f"₹{filtered_df['Price'].mean():,.0f}")
+    kpi3.metric("Most Common Brand", filtered_df["Name"].str.split().str[0].mode()[0])
+    kpi4.metric("Popular Fuel Type", filtered_df["Fuel_Type"].mode()[0])
+
+    st.markdown("---")
+    sum1, sum2 = st.columns(2)
+    sum1.success(f"Transmission Mode: {filtered_df['Transmission'].mode()[0]}")
+    if "Owner_Type" in filtered_df.columns:
+        sum2.info(f"Most Common Ownership: {filtered_df['Owner_Type'].mode()[0]}")
+
+# --- Trends Tab ---
 with tabs[1]:
-    st.info("🗺️ Map requires `latitude` & `longitude` columns.")
+    st.subheader("💵 Price Distribution by Fuel Type")
+    fuel_price = filtered_df.groupby("Fuel_Type")["Price"].mean()
+    st.bar_chart(fuel_price)
 
+    st.markdown("---")
+    st.subheader("⚙️ Transmission Split")
+    trans_counts = filtered_df["Transmission"].value_counts()
+    st.bar_chart(trans_counts)
+
+    st.markdown("---")
+    if "Year" in filtered_df.columns:
+        st.subheader("📆 Year-wise Listing Count")
+        year_dist = filtered_df["Year"].value_counts().sort_index()
+        st.line_chart(year_dist)
+
+# --- Correlation Matrix Tab ---
+with tabs[2]:
+    st.subheader("📎 Correlation Matrix")
+    numeric_cols = filtered_df.select_dtypes(include=["int64", "float64"])
+    corr_matrix = numeric_cols.corr().round(2)
+    st.dataframe(corr_matrix)
+
+# --- Data Table Tab ---
+with tabs[3]:
+    st.subheader("📋 Filtered Data Table")
+    page_size = 50
+    total_rows = len(filtered_df)
+    total_pages = (total_rows - 1) // page_size + 1
+    current_page = st.number_input("Page", min_value=1, max_value=total_pages, step=1)
+    start = (current_page - 1) * page_size
+    end = start + page_size
+    st.dataframe(filtered_df.iloc[start:end].reset_index(drop=True))
+
+# --- Footer ---
 st.markdown("---")
-
-# ── Detailed Stats & Export ───────────────────────────────────────────────────────
-with st.expander("📉 Detailed Statistics"):
-    st.write(df_filtered.describe())
-
-csv_data = df_filtered.to_csv(index=False).encode("utf-8")
-st.download_button("⬇️ Download Filtered Data", data=csv_data, file_name="filtered_cars.csv", mime="text/csv")
-
-st.markdown("---")
-
-# ── Progress & Celebration ────────────────────────────────────────────────────────
-progress = st.progress(0)
-for i in range(0, 101, 20):
-    progress.progress(i)
-progress.empty()
-st.success("✅ Dashboard Ready!")
-st.balloons()
+st.markdown("📘 Powered by Streamlit | Data: Used Car Listings | Visualization: Streamlit-native components only")
